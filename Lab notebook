@@ -1,0 +1,917 @@
+
+------------- Context for research project ----------------
+
+Research has shown that urbanisation is a major threat to biodiversity as it leads to habitat loss and fragmentation which can result in the replacement of specialist species with generalist species. Most research has focused on how the distribution of a species varies across an urban gradient, however there appears to be conflicting findings. Urban areas consist of a variety of habitats and therefore a better approach to understanding the impact that urbanisation might have will involve investigating how specific features of the urban landscape impact the presence or absence of a species. For my project, I have decided to use London - specifically all 32 London Boroughs and the City of London - as a case study because this urban area contains a large diversity of habitat types including grassland, parkland and woodland. 
+
+Bats are a critical biodiversity indicator and therefore understanding how urbanisation impacts bats has widespread implications, providing us with the knowledge to build ecological cities that will help conserve overall species biodiversity. I will be using the occurrence records (1990 - 2017) for bats from NBN atlas using the pre-defined area of Greenspace for Greater London. 
+
+------------------------------Approach----------------------------------------
+
+Woodland, green space and freshwater are important foraging grounds whilst generalist species use man-made buildings as artificial roosts. Therefore, I will be using LCM2007 and OS Open Greenspace Maps to look at how the percentage of woodland, green space and building cover impact the occurrence of bats in London. I will also be using OS Open Rivers Map to look at how the distance from freshwater impacts the presence of bats. There is increasing evidence that distance to roads is negatively correlated with the presence of various species, including bats, because they fragment habitat, are sources of light, noise and chemical pollution and can lead to death through collision with traffic. Therefore, I will be using OS Open Roads Map to investigate how distance from roads impacts the occurrence of bats in London. In addition, climate impacts the occupancy of an area by a species. For example, temperature impacts the availability of roosts whilst precipitation can impact the amount of insect prey available. I will be using Bioclimatic variables from WorldClim and looking at how climate has impacted the presence of bat species. This species distribution model will investigate the probability of a bats being present as a function of the habitat and climatic covariates listed above at a 1km2 resolution. I have decided to use a 1km2 resolution as this is equal to the level of confidence associated with the longitude and latitude values of the occurence records. 
+
+# Date: Tuesday 9th January
+-------------------Importing occurence records--------------------
+# set working directory 
+setwd("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005")
+
+## installed packages for manipulating spatial data
+install.packages("rgdal")
+install.packages("maptools")
+install.packages("raster")
+install.packages("sp")
+install.packages("rgeos")
+
+# loaded libraries for manipulating spatial data
+library(rdgal)
+library(rgeos)
+library(raster)
+library(sp)
+library(maptools)
+
+# read in bat occurence records for London taken from NBN Atlas
+# Only includes records taken from 1990 onwards for all UK Bat Species
+bat_data <- read.csv('batrecords2.csv')
+
+
+## loaded a shapefile of the world
+data(wrld_simpl)
+
+# Got an error message:
+Warning message:
+In data(wrld_simpl) : data set 'wrld_simpl' not found
+
+# This was because "sp" package had failed to install
+# Reinstalled the "sp" package 
+# installation failed
+
+# Date: Thursday 11th January
+
+# Re-attempted installation of 'sp' package
+install.packages("sp")
+library(sp)
+# Installation successful
+
+#cropped wrld_simpl to spatial extent of occurence records (in terms of longitude and latitude)
+
+w_crop = crop(wrld_simpl, extent(c(min(bat_data2$Longitude, na.rm = T)-1, 
+                                   max(bat_data2$Longitude, na.rm = T)+1), min(bat_data2$Latitude, na.rm = T)-1, 
+                                 max(bat_data2$Latitude, na.rm = T)+1))
+                                 
+## Error stated that ymin was greater than ymax
+
+# Date: Tuesday 16th January
+
+-----------------Loading occurence records in London---------------------------
+
+# Source of error found: wrld_simpl can only be cropped to the UK (and not to London) because of its coarse resolution
+# Imported a UK ESRI shapefile with finer solution from Global Adminstrative Areas Website and called it uk
+
+uk = readOGR("GBR_adm2.shp", "GBR_adm2")
+
+# code below gave me the names of all boroughs in the UK
+uk@data$NAME_2
+
+## subsetted shapefile to London Boroughs
+
+uk1 = uk[uk$NAME_2%in%c("Barking and Dagenham","Barnet","Bexley","Brent","Bromley","Camden","Croydon","Ealing","Enfield","Greenwich","Hackney","Hammersmith and Fulham","Haringey","Harrow", "Havering","Hillingdon","Hounslow","Islington","Kensington and Chelsea","Kingston upon Thames","Lambeth","London","Lewisham","Merton","Newham","Redbridge","Richmond upon Thames","Southwark","Sutton","Tower Hamlets","Waltham Forest", "Wandsworth","Westminster"), ]
+
+
+# Converted bat occurence points into a spatial points dataframe by assigning   # the longitude/latitude values as coordinates
+
+bat_data_sp <- bat_data
+coordinates(bat_data_sp) = ~Longitude + Latitude
+
+
+# plotted the occurence records on London shapefile
+
+plot(uk1)
+points(bat_data_sp)
+
+## loaded the raster package
+library(raster)
+
+# made a rasterised map of London with a 1km2 resolution
+# 1km2 chosen because all occurence records extracted from NBN atlas
+# have less than 1km2 uncertainty (in terms of longitude and latitude values)
+
+ras = raster(uk1, resolution = 0.01)
+ras = rasterize(uk1, ras); plot(ras)
+
+
+# Changed the projection of the occurence records to the projection of the      # London shapefile 
+
+projection(bat_data_sp) <- projection(uk1)
+projection(bat_data_sp)
+
+# created a raster of occurence records with resolution of 1km2
+
+r = raster(bat_data_sp, resolution=0.01)
+
+# visualised raster
+p = rasterToPolygons(r)
+plot(p, border='gray')
+points(bat_data_sp, col="red")
+
+# Date: Wednesday 17th January
+
+# created a raster of sampling effort
+# overlayed occurence records over raster of London 
+# calculated the number of occurence points within a specific region
+
+r2 = rasterize(bat_data_sp, r, field=rep(1, nrow(bat_data_sp@data)), fun=sum)
+plot(r2, asp=1); plot(bat_data_sp, pch=18, cex=0.4, col="red", add=T)
+
+# removed duplicate records in each grid cell to leave only one point per cell
+# (i.e. removed spatial correlation in our data with assumption that it is due #to sampling effort)
+# used cellFromXY to look up the raster cell that each record falls in and find duplicates
+
+cell_no  = cellFromXY(r, bat_data_sp)
+
+dup_cells = duplicated(cell_no) 
+
+bat_data_sp2 = bat_data_sp[ ! dup_cells , ]
+
+# Method of removing duplicate records did not work as there were still #duplicate records within the cell
+# Altered the method so it removed duplicate occurence records (with the same #longitude and latitude values)
+
+dups2 <- duplicated(bat_data[, c('Longitude', 'Latitude')])
+bat_data1 <- bat_data[!dups2, ]
+
+# Successful removal of duplicate records
+
+# created spatial points dataframe of non-duplicated records
+
+data_sp <- bat_data1
+coordinates(data_sp) = ~Longitude + Latitude
+
+
+
+# ------------- CREATING BACKGROUND POINTS / PSEUDOABSENCES --------------
+
+# Species Distribution Model is a regression model - looks at what environmental # variables predict the presence of bats
+# Therefore, look at environmental conditions where species is ABSENT and #compare to environmental conditions where a species is PRESENT
+# However, is presence-only data - use pseudoabsence points 
+# Pseudoabsence: either the species is TRULY ABSENT or it has just not been #spotted in the area
+# Pseudoabsence points sample the environment at random points and inform the #model about the possible environmental conditions that your species could #encounter
+
+# downloaded dismo package: required for species distribution modelling
+
+
+install.packages("dismo")
+library(dismo)
+
+# created 100 pseudoabsence points within London
+bg <- randomPoints(ras, 100)
+
+# plotted all points on map
+
+plot((ras), legend=F)
+points(bg, cex=1, pch=18)
+points(data_sp, pch=18, cex=0.7, col="red", add=T)
+
+
+# Date: Thursday 18th January
+
+#-------------------LOAD BIOCLIM PREDICTORS----------------------------
+# Temperature and rainfall  influence the ability of bats to forage for food, #and to survive hibernation periods or seasonal heat. These variables may act #indirectly by limiting the availability of resources, such as insect prey      #.Therefore, environmental predictors influence the distribution and occurence of bats. 
+
+# setting working directory 
+
+setwd("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005/bio30s")
+
+# loaded bioclim data 
+# Listed all GeoTIFF bioclim files in the file path specified
+
+files <- list.files("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005/bio30s", pattern="*.tif", full.names=TRUE )
+
+# created a raster stack of the predictor variables from bioclim 
+# (temperature and rainfall)
+
+predictors1 = stack(files)
+
+## cropped bioclim variables to region of interest (London)
+## ras is the raster file of London at 1km2 resolution
+
+predictors1 = crop(predictors1, ras)
+
+# Plotted each environmental predictor and overlayed occurence records. 
+# See below for example code:
+
+plot(predictors1[[1]], main=names(predictors1[[1]]))
+plot(uk1, add=T)
+points(data_sp, col="red", pch=18, cex=0.25)
+
+# Extracted data on environmental conditions for each occurence point and #pseudoabsence point 
+# These look for differences in habitat covariates in areas where bats are found # versus areas where they have not been spotted
+
+
+# Extracted presence values
+ 
+presvals <- extract(predictors1, data_sp)
+head(presvals)
+
+# Extracted absence values 
+
+absvals <- extract(predictors1, bg)
+head(absvals)
+
+
+------------IMPACT OF TEMPERATURE AND PRECIPITATION ON BATS --------------------
+# Looked at the impact of climate on the distribution of bats across London
+
+# Created a dataframe which contains climate values for each occurence point 
+
+pres_data <- data.frame(cbind(presvals))
+
+# Created a dataframe which contains climate values for each pseudoabsence point
+
+abs_data <- data.frame(cbind(absvals))
+
+# Bound both dataframes together
+
+ sdmdata = data.frame(rbind(pres_data, abs_data))
+ 
+# Added an extra column (called 'pb') that denotes whether bats where absent (0) or present(1). 
+
+sdmdata$pb = c(rep(1, nrow(pres_data)), rep(0, nrow(abs_data)))
+ 
+ 
+# Date : Wednesday 24th January
+ 
+ # Created a glm which looked at the impact of each climate variable on the logs # odd ratio of a bat being present (termed pb). 
+ 
+ glm1<- glm(pb ~ wc2.0_bio_30s_01 + wc2.0_bio_30s_02 + wc2.0_bio_30s_03 + wc2.0_bio_30s_04 + wc2.0_bio_30s_05 + wc2.0_bio_30s_06 + wc2.0_bio_30s_07 + wc2.0_bio_30s_08 + wc2.0_bio_30s_09 + wc2.0_bio_30s_10 + wc2.0_bio_30s_11 + wc2.0_bio_30s_12 + wc2.0_bio_30s_13 + wc2.0_bio_30s_14 + wc2.0_bio_30s_15 + wc2.0_bio_30s_16 + wc2.0_bio_30s_17 + wc2.0_bio_30s_18 + wc2.0_bio_30s_19, data=sdmdata, family="binomial")
+
+# I then looked at the summary of the glm to see if any climatic variables were impacting the chance of a species being present
+ 
+
+summary(glm1)
+
+# Temperature Seasonality was the only variable predicted to have
+# a significant impact on the logs odd ratio of a species being present.
+
+# Date: Thursday 25th January & Friday 26th January
+ 
+# visualised data using a pairs plot
+# Pairs plot showed me which variables were correlated so I could ensure that 
+# no two correlated variables would be used in the same model. 
+# Otherwise, could get a spurious relationship (i.e. two variables are related  # due to a unseen factor)
+
+pairs(sdmdata[,1:19], cex=0.1, fig=TRUE)
+
+# Decided to include the variables isothermality (wc2.0_bio_30s_03), 
+# Precipitation of the warmest quarter (wc2.0_bio_30s_18), Mean Temperature of  #Warmest Quarter (wc2.0_bio_30s_10) and temperature seasonality (wc2.0_bio_30s_ 04).
+#I chose to include temperature seasonality, isothermality and mean temperature # of the warmest quarter as temperature influences breeding success through #availability of roosts (influences internal temperatures of roosts), insect #availability and survival in hibernation and seasonal heat. Given that female #bats gather into nursing colonies in June/July and most surveys took place in #the summer months I included precipitation of the warmest quarter and mean #temperature of the warmest quarter.
+
+#-----------------------------MODEL  SELECTION----------------------------------
+# Date: Monday 29th January 
+
+# installed package to create table of results
+
+install.packages("xtable")
+library(xtable)
+
+# created glm containing four climate variables described above
+
+logistic_sdm <- glm(pb ~ wc2.0_bio_30s_03 + wc2.0_bio_30s_04 + wc2.0_bio_30s_10 + wc2.0_bio_30s_18,data=sdmdata, family="binomial")
+
+# Looked at results and created table of results
+
+summary(logistic_sdm)
+model <- xtable(summary(logistic_sdm))
+
+# AIC value = 406.95. Temperature seasonality and Mean Temperature of Warmest #Quarter have a significant impact on pb ( p < 0.05). Precipitation of the Warmest Quarter has a highly significant impact on pb (p < 0.01). Isothermality
+# is not predicted to have a significant impact on the logs odd ratio of the species being present. 
+# Temperature Seasonality negatively influences pb whereas the other 3 variables # positively influence pb.Two types of deviance are mentioned: null deviance.
+# Inclusion of these variables reduced the deviance from 411.94 on 339 degrees of freedom to 396.95 on 335 degrees of freedom. 
+
+
+# Removed each value and see how that impacts the AIC value and which variables have a significant influence on pb. 
+
+# Removal of isothermality
+
+# created glm without isothermality
+
+logistic_sdm1 <- glm(pb ~ wc2.0_bio_30s_04 + wc2.0_bio_30s_10 + wc2.0_bio_30s_18,data=sdmdata, family="binomial")
+
+# Looked at results and created a table of results
+
+summary(logistic_sdm1)
+model1 <- xtable(summary(logistic_sdm1))
+
+# Removal reduced the AIC value from 406.95 to 406.88. In this model,
+# temperature seasonality has a highly significant negative influence on 
+# pb (p < 0.01). Therefore, removal increases the significance of this variable. # Mean Temperature of the Warmest Quarter continues to have a significant #positive impact on pb ( p < 0.05). Precipitation of the Warmest Quarter #continues to have a highly significant impact on pb ( p < 0.01). This model #reduces the deviance down to 398.88 on 336 degrees of freedom. Therefore, the #previous model resulted in a greater reduction in deviance. 
+
+# Removal of temperature seasonality
+
+# created glm without temperature seasonality
+
+logistic_sdm2 <- glm(pb ~ wc2.0_bio_30s_03 + wc2.0_bio_30s_10 + wc2.0_bio_30s_18,data=sdmdata, family="binomial")
+
+# Looked at results and created table
+summary(logistic_sdm2)
+model2 <- xtable(summary(logistic_sdm2))
+
+# Removal increases the AIC value to 410.34 (a higher AIC value than in the 2
+# previous models where all variables were present or where isothermality was #removed). 
+# The significance of Precipitation of the Warmest Quarter is reduced so that , #instead of having a highly significant influence on pb,it instead has a #significant positive influence on pb (compared to the two previous models) 
+#(p < 0.05).  Mean Temperature of the Warmest Quarter is no longer predicted to #have a significant influence on pb. 
+# The deviance is reduced from 411.94 on 339 degrees of freedom down to 402.34 #on 336 degrees of freedom. 
+
+# Date: Tuesday 30th January
+
+# Removal of Mean Temperature of the Warmest Quarter
+
+# created glm with variable removed 
+
+logistic_sdm3 <- glm(pb ~ wc2.0_bio_30s_03 + wc2.0_bio_30s_04 + wc2.0_bio_30s_18,data=sdmdata, family="binomial")
+
+# Looked at results and created table of results
+
+summary(logistic_sdm3)
+model3 <- xtable(summary(logistic_sdm3))
+
+# Removal increases the AIC value to 410.97. This is a higher AIC than the three models above. Interestingly, none of the variables are predicted to have a significant impact on pb. However, Precipitation of the Warmest Quarter is predicted to have a near positive significant influence on pb ( p = 0.056). 
+# The deviance is reduced from 411.94 on 339 degrees of freedom down to 402.97 on 336 degrees of freedom. This is the smallest reduction in deviance
+# so far compared to the previous models. 
+
+# Removal of Precipitation of the Warmest Quarter
+
+# Created a glm without variable
+
+logistic_sdm4 <- glm(pb ~ wc2.0_bio_30s_03 + wc2.0_bio_30s_04 + wc2.0_bio_30s_10 ,data=sdmdata, family="binomial")
+
+# Looked at results and created table of results
+
+summary(logistic_sdm4)
+model4 <- xtable(summary(logistic_sdm4))
+
+# Removal increases the AIC value to 413.33. This is the highest AIC value out #of all the models above. None of the variables are predicted to have a #significant impact on pb. Temperature seasonality has a near significant 
+#negative influence on pb ( p = 0.08). This model reduces the deviance from 
+# 411.94 on 339 degrees of freedom down to 405.33 on 336 degrees of freedom. 
+
+# Model selection process: Chose the model with the lowest AIC value : 
+#logistic_sdm1 which is the model where isothermality was removed but Mean Temperature of the Warmest Quarter, Precipitation of the Warmest Quarter and #Temperature Seasonality were included. 
+
+# Date: Thursday 1st February
+--------------MODEL PREDICTION AND EVALUATION-------------------------------
+
+# Looked at how well my model predicts pb
+
+# Generated a prediction based on model
+
+logistic_prediction = predict(predictors1, logistic_sdm1, type="response")
+
+# Plotted prediction
+
+plot(logistic_prediction)
+
+# added original occurence records (presence data)
+
+points(data_sp, pch=18, cex=0.25, col="red")
+
+# Model evaluation
+
+# calculated AUC values and correlation coefficient 
+
+eval1 = evaluate(p = sdmdata[sdmdata$pb==1,], a = sdmdata[sdmdata$pb==0,],
+                 model = logistic_sdm1)
+
+eval1
+
+# AUC was 0.619 : logistic_sdm1 is a poor predictor of pb.  
+# I would expect this as there are other variables, such as land cover which 
+# will also impact pb. However, this model highlights that climate does play a #role.The correlation is 0.19 which shows there is a weak positive correlation #between pb and my environmental variables. 
+# The maximum true presence rate + true negative rate is 0.707. 
+
+# Created a density plot
+
+density(eval1)
+
+# Created a box plot 
+
+boxplot(eval1)
+# Showed that there is a difference between the presence and absence group 
+# when climate variables are accounted for, although there is overlap. 
+
+
+plot(eval1, 'ROC')
+
+## plotted the model against the null model (i.e. that the AUC is 0.5 and thus 
+#the true positive rate is the same as the false positive rate)
+# My model is better than the null model with an AUC of 0.619. However, #predictability of pb is still poor. 
+
+
+Date: Friday 2nd February
+# ------------- LAND COVER MAP DATA --------------
+
+# changed working directory 
+
+setwd("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005")
+
+# Loaded land cover raster 
+
+lcm2007 <- raster('PHTR.LCM2007_GB_1K_DOM_AGG_V2_.tif')
+
+# matched projection of occurence records and raster 
+
+projection(lcm2007) <- projection(data_sp)
+
+# plotted  to check projection
+
+plot(lcm2007)
+points(data_sp)
+
+## Error message:
+#In couldBeLonLat(x) :
+  #raster has a longitude/latitude CRS, but coordinates do not match that
+  
+
+# Looked up error online and changed code
+
+# changed CRS of data_sp
+
+data_sp <- ""+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0""
+
+# created object containing WGS84 projection
+
+new_crs = projection(data_sp)
+
+## Used projectRaster function to change the CRS of lcm2007 to WGS84
+
+ lcm2007 = projectRaster(lcm2007, crs = new_crs)
+ 
+## Checked projection of occurence records and raster
+
+plot(lcm2007)
+points(data_sp, pch=18, cex=0.7, col="deeppink", add=T)
+
+ 
+#extracted presence and absence values
+
+lcm_presvals <- extract(lcm2007, data_sp)
+lcm_absvals <- extract(lcm2007, bg)
+
+
+# Date: Friday 9th February
+# -------------------------------ROAD DATA ---------------------------------
+
+# Extracted data on percentage cover of roads in London to add to model
+
+# Loaded packages required
+
+# libraries
+library(raster)
+library(rgdal)
+library(maptools)
+library(rgeos)
+library(splancs)
+
+# Set working directory
+
+setwd("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005")
+
+# imported UK shapefile 
+
+uk <- readOGR("GBR_adm2.shp", "GBR_adm2")
+
+# subsetted to London
+
+shp <- uk[uk$NAME_2%in%c("Barking and Dagenham","Barnet","Bexley","Brent","Bromley","Camden","Croydon","Ealing","Enfield","Greenwich","Hackney","Hammersmith and Fulham","Haringey","Harrow", "Havering","Hillingdon","Hounslow","Islington","Kensington and Chelsea","Kingston upon Thames","Lambeth","London","Lewisham","Merton","Newham","Redbridge","Richmond upon Thames","Southwark","Sutton","Tower Hamlets","Waltham Forest", "Wandsworth","Westminster"), ]
+
+# imported OS Open Roads Shapefile 
+
+road <- readOGR("TQ_RoadLink.shp","TQ_RoadLink")
+
+
+# transformed road map to same projection as uk shapefile
+
+
+road1 = spTransform(road, CRS(projection(shp)))
+save(road1, file="roads_transformed.R")
+
+
+# cropped map to correct size (extent of London)
+# Added column stating if a road is present or not
+
+road2 = crop(road1, extent(shp))
+road2@data$road_or_not = 1
+save(road2, file="roads_transformed_cropped.R")
+
+# Created an object containing the data for road2
+
+r1 = road2
+
+# rasterized by 'road or not': raster where each 'road' cell is given a value of #1, and non-roads are 0
+# Plotted raster and saved raster
+
+rr = rasterize(r1, rh, field=r1@data$road_or_not)
+plot(rr, asp=1)
+writeRaster(rr, filename="london_roads_raster_hiresolution.tif", format="GTiff")
+
+### Created a function to calculate percentage cover of roads
+# argument 'r' is a raster, 'fact' is the factor to aggregate by
+# aggregate and calculate number of cells containing road
+# divide by fact^2 to calculate proportion cover
+
+calculate_proportion = function(ras, fact){
+  new_raster = aggregate(ras, fact, fun=sum) 
+  return( new_raster/fact^2 ) 
+}
+
+# Ran function to calculate percentage cover
+
+rr2 = calculate_proportion(rr, fact=16)
+plot(rr2, asp=1)
+
+
+# Extracted presence and absence values
+
+
+road_presvals <- extract(rr2, data_sp)
+road_absvals <- extract(rr2, bg)
+
+# Date: Tuesday 13th February
+
+# ------------- RIVER DATA --------------
+# Extracted values on percentage river cover to add to model
+
+# Loaded libraries
+library(raster)
+library(rgdal)
+library(maptools)
+library(rgeos)
+library(splancs)
+
+
+# read in OS Waterways Map Shapefile
+
+water <- readOGR("WatercourseLink.shp", 'WatercourseLink')
+
+
+# transformed data to same projection as London shapefile
+
+water1 = spTransform(water, CRS(projection(shp)))
+save(water1, file="water_transformed.R")
+#load(file="water_transformed.R")
+
+# cropped to correct size
+# added column stating if water present or not 
+
+water2 = crop(water1, extent(shp))
+water2@data$river_or_not = 1
+save(water2, file="water_transformed_cropped.R")
+
+
+# Assigned water data to object 'w1'
+w1 = water2
+
+# rasterized by 'river or not': raster where each 'river' cell is given a value # of 1, and non-rivers are 0
+# Saved raster containing 'river or not' data
+
+w_rr = rasterize(w1, wh, field=w1@data$river_or_not)
+plot(w_rr, asp=1)
+writeRaster(w_rr, filename="london_river_raster_hiresolution.tif", format="GTiff")
+
+### Created function to calculate percentage cover
+
+calculate_proportion = function(ras, fact){
+  new_raster = aggregate(ras, fact, fun=sum) 
+  return( new_raster/fact^2 ) 
+}
+
+# ran function
+w_rr2 = calculate_proportion(w_rr, fact=16)
+plot(w_rr2, asp=1)
+
+
+### Extracted presence and absence values for model
+
+water_presvals <- extract(w_rr2, data_sp)
+water_absvals <- extract(w_rr2, bg)
+
+#Date: Wednesday 14th February
+#-------------GREEN SPACE DATA--------------
+# Extracted greenspace cover data to add to model
+
+# set working directory
+
+setwd("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005/os_green/OS Open Greenspace (ESRI Shape File) GB/data")
+
+# loaded libraries
+library(raster)
+library(rgdal)
+library(maptools)
+library(rgeos)
+library(splancs)
+
+
+# read in OS GreenSpace Maps Shapefile
+
+green <- readOGR("GB_GreenspaceSite.shp","GB_GreenspaceSite")
+
+
+# transformed green space data to same projection as shapefile
+
+green1 = spTransform(green, CRS(projection(shp)))
+save(green1, file="green_transformed.R")
+
+
+# cropped to correct size
+
+green2 = crop(green1, extent(shp))
+green2@data$green_or_not = 1
+save(green2, file="green_transformed_cropped.R")
+
+
+# created object containing data from 'green 2'
+g1 = green2
+
+
+# rasterized by 'green or not'
+# save new raster
+
+g_rr = rasterize(g1, gh, field=g1@data$green_or_not)
+plot(g_rr, asp=1)
+writeRaster(g_rr, filename="london_green_raster_hiresolution.tif", format="GTiff")
+
+### calculated percentage cover
+
+calculate_proportion = function(ras, fact){
+  new_raster = aggregate(ras, fact, fun=sum) 
+  return( new_raster/fact^2 ) 
+}
+
+# ran function for percentage cover
+
+g_rr2 = calculate_proportion(g_rr, fact=16)
+plot(g_rr2, asp=1)
+
+
+
+# Extracted presence and absence values 
+
+g_presvals <- extract(g_rr2, data_sp)
+g_absvals <- extract(g_rr2, bg)
+
+#Date: Thursday 15th February
+---------------------SPECIES DISTRIBUTION MODELLING----------------------
+## Results showed that the best model for bioclim only data was:
+
+logistic_sdm1 <- glm(pb ~ wc2.0_bio_30s_04 + wc2.0_bio_30s_10 + wc2.0_bio_30s_18,data=sdmdata, family="binomial")
+
+# New model additionally contains land cover data, percentage cover of roads, rivers and green space.
+# Re-ran previous code in section labelled "CREATING BACKGROUND POINTS / #PSEUDOABSENCES" due to technical difficulties with R. Therefore, pseudoabsence #points are different in this section. 
+
+# Generated new model containing additional variables described:
+
+logistic_sdm1 <- glm(pb ~  wc2.0_bio_30s_04 + wc2.0_bio_30s_10 + wc2.0_bio_30s_18
+                     + lcm2007 + percent_road + percent_water + percent_green ,data=sdmdata, family="binomial")
+                     
+# Looked at results and created table of results
+
+summary(logistic_sdm1)
+
+model1 <- xtable(summary(logistic_sdm1))
+
+# Temperature seasonality has significant slightly negative influence on pb 
+# (p =0.03). None of the other variables are predicted to have a significant #influence on pb. Mean Temperature of the Warmest Quarter and Precipitation of #the Warmest Quarter have a positive influence on the value of pb. Land cover #has a slightly positive influence on pb. The percentage road cover has a #negative influence on pb. Additionally, the percentage water cover has a #negative influence on pb. The percentage cover of greenspace has a positive #influence on pb, albeit not significant.
+# The null deviance is 425.41 on 359 degrees of freedom and residual deviance is # 411.31 on 352 degrees of freedom. The AIC value is 427.31. 
+
+# Date: Friday 16th February
+
+--------------------MODEL EVALUATION-----------------------------------------
+# Generated a prediction for pb based on model above
+
+logistic_prediction = predict(all_predictors, logistic_sdm1, type="response")
+
+# Plotted prediction
+
+plot(logistic_prediction)
+
+# added original points of presence data
+
+points(data_sp, pch=18, cex=0.25, col="red")
+
+# calculated AUC values and correlation coefficient for model
+
+eval1 = evaluate(p = sdmdata[sdmdata$pb==1,], a = sdmdata[sdmdata$pb==0,],
+                 model = logistic_sdm1)
+
+eval1
+
+# The AUC was 0.614 which shows that my model is a poor predictor of pb 
+# The correlation is 0.19 which shows there is a weak positive correlation #between pb and environmental variables included (land cover, percent water #cover, percent greenspace cover and percent road cover). 
+# The maximum true presence rate + true negative rate is 0.94. 
+
+# created density plot
+
+density(eval1)
+
+# created boxplot 
+
+boxplot(eval1)
+
+# There is a difference between the presence and absence group, although there #is  overlap. Absence box plot has lower values and presence boxplot has 3 #outliers. Larger spread in presence box plot. 
+
+
+plot(eval1, 'ROC')
+
+## plotting the model against the null model (i.e. that the AUC is 0.5 and thus 
+#the true positive rate is the same as the false positive rate)
+
+# This model is a poor predictor of pb  so I changed the way I was measuring #and cover. In this model, I had used the LCM2007 dominant aggregate class #dataset which identifies the dominant land class within 1km2 of each occurence #point. 
+# Therefore I used the LCM2007 percentage aggregate class dataset instead as I #could determine the percentage woodland and impervious cover within 1km2 
+#of each occurence point, instead of what the dominant land class is (e.g. #woodland). I felt that this would better examine the effects of urban landscape #features on the occurence of bats.  
+# I could then compare the two models and see which one better predicts pb. 
+
+# I could then use these new predictors of impervious cover and % woodland and #add them to my previous model, excluding the previous measure of land cover
+#(lcm2007 dominant aggregate class). 
+
+#Date: Wednesday 21st February
+
+# Changed working directory
+setwd("//ad.ucl.ac.uk/homer/zcbtmor/DesktopSettings/Desktop/BIOLM005/Download_LCM_1KM2007_890018/lcm-2007-1km_2201984/percentage_aggregate_class")
+
+#----------% BROADLEAF WOODLAND----------------------------------------------
+# Loaded the raster containing the percentage broadleaf woodland into R
+
+b_wood <- raster('LCM2007_GB_1K_PC_AggregateClass_1.tif')
+
+# changed projection to WGS84 and saved raster of new projection
+
+sr = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+projected_b_wood <- projectRaster(b_wood, crs = sr)
+
+writeRaster(projected_b_wood, filename="b_wood.tif")
+
+# changed projection of occurence points to WGS84 projection
+
+coordinates(data_sp) = ~Longitude + Latitude
+projection(data_sp) <- projection(projected_b_wood)
+projection(data_sp)
+
+# cropped to extent of London and added points: checked projection successful
+
+plot(crop(projected_b_wood, extent(data_sp)))
+points(data_sp, pch = 18, cex = 0.7, col="deeppink", add = T)
+
+### extracted presence and absence values 
+
+b_wood_presvals <- extract(projected_b_wood, data_sp)
+b_wood_absvals <- extract(projected_b_wood, bg)
+
+#-------------------% CONIFEROUS WOODLAND------------------------------------
+# Loaded raster of percentage coniferous woodland into R
+
+c_wood <- raster('LCM2007_GB_1K_PC_AggregateClass_2.tif')
+
+# changed projection to WGS84 and created raster of new projection
+
+sr = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+projected_c_wood <- projectRaster(c_wood, crs = sr)
+
+writeRaster(projected_c_wood, filename="c_wood.tif")
+
+# cropped to extent of London and added points
+
+plot(crop(projected_c_wood, extent(data_sp)))
+points(data_sp, pch = 18, cex = 0.7, col="deeppink", add = T)
+
+### extracted presence and absence values 
+
+c_wood_presvals <- extract(projected_c_wood, data_sp)
+c_wood_absvals <- extract(projected_c_wood, bg)
+
+#------------------% IMPERVIOUS COVER-----------------------------
+# Loaded raster into R containing percentage urban cover
+
+impervious <- raster('LCM2007_GB_1K_PC_AggregateClass_10.tif')
+
+# changed projection to WSG84 and created new raster in projection
+
+sr = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+projected_impervious <- projectRaster(impervious, crs = sr)
+
+writeRaster(projected_impervious, filename="impervious.tif")
+
+# cropped to extent of London and added points. 
+
+plot(crop(projected_impervious, extent(data_sp)))
+points(data_sp, pch = 18, cex = 0.7, col="deeppink", add = T)
+
+### extracted presence and absence values 
+urban_presvals <- extract(projected_impervious, data_sp)
+urban_absvals <- extract(projected_impervious, bg)
+
+# Date: Thursday 22nd February
+
+# Reminder of predictors in model: WorldClim data, percentage woodland, percentage impervious cover, percentage greenspace, percentage road cover and percentage water cover
+
+# resampled so all rasters are same resolution and extent
+
+r_2resampled = resample(projected_b_wood, predictors1[[1]], method = "ngb")
+r_3resampled = resample (projected_c_wood, predictors1[[1]], method = "ngb")
+r_4resampled = resample (projected_impervious, predictors1[[1]], method = "ngb")
+r_5resampled = resample(rr2, predictors1[[1]], method="ngb")
+r_6resampled = resample (w_rr2, predictors1[[1]], method = "ngb")
+r_7resampled = resample (g_rr2, predictors1[[1]], method = "ngb")
+
+# checked that all rasters are same extent as London shapefile (see below for example code)
+
+plot(r_3resampled, asp=1)
+plot(shp, add=T)
+
+# created a raster stack of all predictors to be included in model
+
+all_predictor = stack(predictors1,r_2resampled,r_3resampled, r_4resampled, r_5resampled, r_6resampled, r_7resampled)
+
+# removed NA values from OS Maps Data: Percentage Cover Greenspace, Percentage Water Cover and Percentage Road Cover
+# removed because analysis of raster revealed that urban landscape feature (e.g. greenspace) was absent for all points with a value of NA
+
+all_predictor$layer.1[is.na(all_predictor$layer.1)] <- 0 
+all_predictor$layer.2[is.na(all_predictor$layer.2)] <- 0 
+all_predictor$layer.3[is.na(all_predictor$layer.3)] <- 0 
+
+# changed names of columns in raster stack
+names(all_predictor)[20] <- "percent_broadleaved_woodland"
+names(all_predictor)[21] <- "percent_coniferous_woodland"
+names(all_predictor)[22] <- "percent_impervious_cover"
+names(all_predictor)[23] <- "percent_road"
+names(all_predictor)[24] <- "percent_water"
+names(all_predictor)[25] <- "percent_green"
+
+# Extracted presence values for all predictors
+
+presvals_1 <- extract(all_predictor, data_sp)
+head(presvals_1)
+
+# extracted absence/background values 
+
+absvals_1 <- extract(all_predictor, bg)
+head(absvals_1)
+
+# presence and absence values into data frames
+
+pres_data1 <- data.frame(cbind(presvals_1))
+
+abs_data1 <- data.frame(cbind(absvals_1))
+
+# Put presence and absence data together and add an extra column (called 'pb') that denotes whether presence (1) or absence (0)
+
+sdm_data = data.frame(rbind(pres_data1, abs_data1))
+sdm_data$pb = c(rep(1, nrow(pres_data1)), rep(0, nrow(abs_data1)))
+
+#Date: Friday 23rd February
+#-------------SPECIES DISTRIBUTION MODELLING---------------------------------
+
+
+# The model looks at the impact of each predictor on the log odds of a species being present
+# create a model containing all the predictors described above
+
+logistic_sdm_1 <- glm(pb ~ wc2.0_bio_30s_04 + wc2.0_bio_30s_10 + wc2.0_bio_30s_18 
+                    +percent_broadleaved_woodland + percent_coniferous_woodland + percent_impervious_cover 
+                    + percent_road + percent_water + percent_green ,data=sdm_data, family="binomial")
+  
+# look at model results and see which are significant.
+
+summary(logistic_sdm_1)
+
+# create table of results
+new_model <- xtable(summary(logistic_sdm_1))
+
+# only variable predicted to have a significant negative impact on pb is temperature seasonality (wc2.0_bio_30s_04)(p = 0.02). No other variables were predicted to have a significant impact on pb. 
+# # Mean Temperature of Warmest Quarter (wc2.0_bio_30s_10) and  Precipitation of Warmest Quarter(wc2.0_bio_30s_18) are predicted to have a positive influence on pb, albeit non-significant. Temperature and rainfall conditions influence the ability of bats to forage for food, and to survive hibernation periods or seasonal heat. These variables may act indirectly by limiting the availability of resources, such as insect prey. 
+
+# Variables predicted to have a non-significant negative influence on pb (-0.44) were percentage cover or roads, coniferous woodland and impervious cover. Given that roads disrupt flyways and can lead to road kills I was not surprised that this had a negative impact on pb. Impervious cover refers to man-made structures and urbanisation leads to loss of habitat so I would have expected that percentage impervious cover would have had a negative impact on pb in specialist species. However this is only a small negative impact ( -0.002) which may be because man made structures can provide valuable roosting opportunities. I was surprised that coniferous woodland had a negative impact (-0.25) on pb. However, there is limited availability of this type of woodland and it may be that these patches are too small for bats to exploit for foraging and roosting opportunities.
+# Variables predicted to have a non-significant positive impact on on pb included percentage greenspace (0.86), percentage water cover (0.08) and percentage broadleaved woodland (0.01). I would expect these to positively impact pb because green space and rivers provide important foraging opportunities whilst woodland provides important foraging and roosting opportunities.
+ 
+### ---------------PREDICTING OCCURENCE USING MODEL----------------------------
+# using the model to predict the probability that bats will be found within a 1km2 area based on the series of predictors used in the model
+# creating a plot of the prediction
+
+logistic_prediction = predict(all_predictor, logistic_sdm_1, type="response")
+
+plot(logistic_prediction)
+
+# add original points of presence data to prediction
+points(data_sp, pch=18, cex=0.25, col="red")
+
+# calculating AUC values and correlation coefficient from model of 240 presence points
+# and 100 absence points
+
+eval2 = evaluate(p = sdm_data[sdm_data$pb==1,], a = sdm_data[sdm_data$pb==0,],
+                 model = logistic_sdm_1)
+
+eval2
+
+
+density(eval2)
+
+boxplot(eval2)
+
+
+
+plot(eval2, 'ROC')
+
