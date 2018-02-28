@@ -915,3 +915,34 @@ boxplot(eval2)
 
 plot(eval2, 'ROC')
 
+# Checking fit of model using training and test dataset
+########
+# divide sdmdata into two random sets, 80% and 20%
+samp = sample(nrow(sdmdata), round(0.8 * nrow(sdmdata)))
+traindata = sdmdata[ samp, ]
+testdata = sdmdata[ -samp, ]
+ 
+# subset training data to only presences (as bioclimatic model only fits to presence data)
+# and to same variables for fitted model 
+
+traindata = traindata[ traindata$pb == 1, c("wc2.0_bio_30s_04", "wc2.0_bio_30s_10", "wc2.0_bio_30s_18", "lcm2007", "percent_road", "percent_water", "percent_green") ]
+ 
+#traindata = traindata[ traindata$pb == 1, c("wc2.0_bio_30s_04", "wc2.0_bio_30s_10", "wc2.0_bio_30s_18", "lcm2007", "percent_road", "percent_water", "percent_green")]
+ 
+# fit bioclimatic model
+bclim1 <- bioclim(traindata)
+ 
+# evaluate against test data
+# in this case we evaluate against both presence and background
+
+eval2 <- evaluate( p=testdata[testdata$pb==1,], a=testdata[testdata$pb==0,], model=bclim1)
+
+# plot the receiver operating curve - sensitivity vs. specificity
+plot(eval2, 'ROC')
+ 
+ 
+bioclim_prediction = predict(all_predictors, bclim1, type="response")
+plot(bioclim_prediction)
+points(data_sp, pch=18, cex=0.25, col="red") # add original points
+#############
+
